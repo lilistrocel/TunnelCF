@@ -82,12 +82,17 @@ sudo mkdir -p "$(dirname "$OUTPUT_FILE")"
 # Decrypt
 log_info "Decrypting $ENCRYPTED_FILE..."
 
-if sudo age -d -i "$AGE_KEY" "$ENCRYPTED_FILE" -o "$OUTPUT_FILE" 2>/dev/null; then
+DECRYPT_ERROR=$(sudo age -d -i "$AGE_KEY" -o "$OUTPUT_FILE" "$ENCRYPTED_FILE" 2>&1)
+if [[ $? -eq 0 ]]; then
     sudo chmod 600 "$OUTPUT_FILE"
     log_info "Successfully decrypted to $OUTPUT_FILE"
 else
     log_error "Decryption failed!"
     echo ""
+    if [[ -n "$DECRYPT_ERROR" ]]; then
+        echo "age error: $DECRYPT_ERROR"
+        echo ""
+    fi
     echo "Possible causes:"
     echo "  - Wrong private key (doesn't match public key used to encrypt)"
     echo "  - Corrupted encrypted file"
