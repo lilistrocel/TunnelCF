@@ -1,0 +1,15 @@
+# Sensitive files - NEVER commit
+config.env
+*.key
+*.pem
+
+# age private keys
+.age/
+
+# Backups
+*.bak
+*.backup
+
+# Allow encrypted versions
+!*.age
+!*.enc
