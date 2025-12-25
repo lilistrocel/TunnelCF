@@ -1,0 +1,45 @@
+[Unit]
+Description=Cloudflare Tunnel Auto-Provisioner
+Documentation=https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
+After=network-online.target
+Wants=network-online.target
+# Ensure SSH is running before we expose it
+After=ssh.service sshd.service
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/cf-tunnel-provisioner.sh
+Restart=always
+RestartSec=10
+
+# Security hardening
+User=root
+Group=root
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+# Allow writes to state directory
+ReadWritePaths=/var/lib/cf-tunnel
+
+# Environment
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cf-tunnel
+
+# Watchdog - restart if unresponsive
+WatchdogSec=300
+
+# Rate limiting restarts
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target
