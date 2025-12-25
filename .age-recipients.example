@@ -1,0 +1,28 @@
+# =============================================================================
+# age Recipients File
+# =============================================================================
+# List public keys of people/machines that should be able to decrypt secrets.
+# One public key per line. Lines starting with # are comments.
+#
+# Generate a key pair with:
+#   age-keygen -o ~/.age/key.txt
+#
+# Get your public key with:
+#   cat ~/.age/key.txt | grep "public key"
+#
+# Add public keys below (remove the examples):
+# =============================================================================
+
+# Example: Your development machine
+# age1abc123def456ghi789jkl012mno345pqr678stu901vwx234yza567bcde890
+
+# Example: Production deploy server
+# age1xyz987wvu654tsr321qpo098nml765kji432hgf109edc876baz543yxw210
+
+# Example: CI/CD pipeline key
+# age1ci0cd123pipeline456key789here012and345more678chars901needed234here
+
+# -----------------------------------------------------------------------------
+# ADD YOUR PUBLIC KEYS BELOW THIS LINE
+# -----------------------------------------------------------------------------
+

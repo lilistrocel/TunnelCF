@@ -37,7 +37,7 @@ if exist "%RECIPIENTS_FILE%" (
     echo [INFO] Using personal key: %KEY_FILE%
     
     REM Extract public key from key file
-    for /f "tokens=4" %%a in ('findstr /C:"public key:" "%KEY_FILE%"') do (
+    for /f "tokens=3" %%a in ('findstr /C:"public key:" "%KEY_FILE%"') do (
         set PUBLIC_KEY=%%a
     )
     

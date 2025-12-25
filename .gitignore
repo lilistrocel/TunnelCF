@@ -1,15 +1,74 @@
-# Sensitive files - NEVER commit
+# =============================================================================
+# Cloudflare Tunnel Service - Git Ignore
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# SECRETS - NEVER COMMIT THESE
+# -----------------------------------------------------------------------------
+
+# Plaintext config with credentials
 config.env
+
+# Private keys
 *.key
 *.pem
-
-# age private keys
 .age/
+age-key.txt
+.age-key.txt
 
-# Backups
+# Git-crypt key
+git-crypt-key*
+
+# -----------------------------------------------------------------------------
+# SAFE TO COMMIT (encrypted files)
+# -----------------------------------------------------------------------------
+# These are explicitly NOT ignored:
+# !config.env.age
+# !*.enc
+# !.age-recipients
+
+# -----------------------------------------------------------------------------
+# System files
+# -----------------------------------------------------------------------------
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.directory
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# -----------------------------------------------------------------------------
+# Editor/IDE
+# -----------------------------------------------------------------------------
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# JetBrains
+.idea/
+*.iml
+
+# Vim
+*.swp
+*.swo
+*~
+
+# -----------------------------------------------------------------------------
+# Temporary/Build files
+# -----------------------------------------------------------------------------
+
 *.bak
 *.backup
-
-# Allow encrypted versions
-!*.age
-!*.enc
+*.tmp
+*.temp
+*.log

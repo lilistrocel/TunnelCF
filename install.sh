@@ -93,6 +93,50 @@ systemctl daemon-reload
 if [[ ! -f /etc/cf-tunnel/config.env ]]; then
     log_warn "Configuration file not found!"
     
+    # Check for encrypted config
+    if [[ -f "$SCRIPT_DIR/config.env.age" ]]; then
+        echo ""
+        log_info "Found encrypted config: config.env.age"
+        read -p "Decrypt it now? (y/n): " DECRYPT_CONFIG
+        
+        if [[ "$DECRYPT_CONFIG" =~ ^[Yy]$ ]]; then
+            # Check for age
+            if ! command -v age &> /dev/null; then
+                log_info "Installing age encryption tool..."
+                apt-get install -y age || {
+                    log_error "Failed to install age. Install manually: apt install age"
+                }
+            fi
+            
+            if command -v age &> /dev/null; then
+                # Try to find or get key
+                AGE_KEY=""
+                for key_path in "$HOME/.age/key.txt" "/etc/cf-tunnel/age-key.txt" "$SCRIPT_DIR/.age-key.txt"; do
+                    if [[ -f "$key_path" ]]; then
+                        AGE_KEY="$key_path"
+                        break
+                    fi
+                done
+                
+                if [[ -z "$AGE_KEY" ]]; then
+                    echo ""
+                    read -p "Enter path to age private key: " AGE_KEY
+                fi
+                
+                if [[ -f "$AGE_KEY" ]]; then
+                    age -d -i "$AGE_KEY" "$SCRIPT_DIR/config.env.age" > /etc/cf-tunnel/config.env
+                    chmod 600 /etc/cf-tunnel/config.env
+                    log_info "Config decrypted successfully!"
+                else
+                    log_error "Key file not found: $AGE_KEY"
+                fi
+            fi
+        fi
+    fi
+fi
+
+# Still no config? Interactive setup
+if [[ ! -f /etc/cf-tunnel/config.env ]]; then
     # Interactive configuration
     echo ""
     read -p "Would you like to configure the tunnel now? (y/n): " CONFIGURE
