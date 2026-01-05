@@ -89,6 +89,22 @@ log_info "Installing systemd service..."
 cp "$SCRIPT_DIR/cf-tunnel.service" /etc/systemd/system/cf-tunnel.service
 systemctl daemon-reload
 
+# Install network dispatcher for automatic restart on network changes
+log_info "Installing network change dispatcher..."
+if [[ -d /etc/NetworkManager/dispatcher.d ]]; then
+    cp "$SCRIPT_DIR/cf-tunnel-network-dispatcher.sh" /etc/NetworkManager/dispatcher.d/99-cf-tunnel
+    chmod 755 /etc/NetworkManager/dispatcher.d/99-cf-tunnel
+    log_info "NetworkManager dispatcher installed"
+elif [[ -d /etc/network/if-up.d ]]; then
+    # Alternative for systems using ifupdown (Debian without NetworkManager)
+    cp "$SCRIPT_DIR/cf-tunnel-network-dispatcher.sh" /etc/network/if-up.d/cf-tunnel
+    chmod 755 /etc/network/if-up.d/cf-tunnel
+    log_info "ifupdown hook installed"
+else
+    log_warn "Neither NetworkManager nor ifupdown found - network change restart will not work automatically"
+    log_warn "The tunnel will still reconnect on its own, but may take longer after IP changes"
+fi
+
 # Check for configuration
 if [[ ! -f /etc/cf-tunnel/config.env ]]; then
     log_warn "Configuration file not found!"
@@ -217,10 +233,16 @@ log_info "Installation complete!"
 echo ""
 echo "Useful commands:"
 echo "  sudo systemctl status cf-tunnel      # Check service status"
-echo "  sudo journalctl -u cf-tunnel -f      # View logs"
+echo "  sudo journalctl -u cf-tunnel -f      # View systemd logs"
+echo "  sudo tail -f /var/lib/cf-tunnel/tunnel.log  # View detailed tunnel log"
 echo "  sudo systemctl restart cf-tunnel     # Restart service"
 echo "  cat /var/lib/cf-tunnel/tunnel-info.json  # View tunnel info"
 echo ""
 echo "To connect via SSH:"
 echo "  cloudflared access ssh --hostname <hostname>"
+echo ""
+echo "New in this version:"
+echo "  - Automatic restart on network/IP changes"
+echo "  - Health monitoring with automatic reconnection"
+echo "  - Detailed logging at /var/lib/cf-tunnel/tunnel.log"
 echo ""

@@ -5,12 +5,22 @@ After=network-online.target
 Wants=network-online.target
 # Ensure SSH is running before we expose it
 After=ssh.service sshd.service
+# Restart when network target is restarted
+PartOf=network-online.target
+# Also bind to NetworkManager if available
+After=NetworkManager-wait-online.service
+Wants=NetworkManager-wait-online.service
 
 [Service]
 Type=exec
+ExecStartPre=/bin/sleep 5
 ExecStart=/usr/local/bin/cf-tunnel-provisioner.sh
 Restart=always
-RestartSec=10
+RestartSec=5
+
+# Faster restart on network issues
+TimeoutStartSec=120
+TimeoutStopSec=30
 
 # Security hardening
 User=root

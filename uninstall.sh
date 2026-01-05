@@ -44,6 +44,11 @@ systemctl daemon-reload
 log_info "Removing provisioner script..."
 rm -f /usr/local/bin/cf-tunnel-provisioner.sh
 
+# Remove network dispatcher scripts
+log_info "Removing network dispatcher scripts..."
+rm -f /etc/NetworkManager/dispatcher.d/99-cf-tunnel 2>/dev/null || true
+rm -f /etc/network/if-up.d/cf-tunnel 2>/dev/null || true
+
 # Ask about configuration
 echo ""
 read -p "Remove configuration files? (y/n): " REMOVE_CONFIG
