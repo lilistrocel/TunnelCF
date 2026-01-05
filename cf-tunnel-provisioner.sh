@@ -332,7 +332,7 @@ run_with_health_monitoring() {
         local health_check_counter=0
         while kill -0 "$cloudflared_pid" 2>/dev/null; do
             sleep "$HEALTH_CHECK_INTERVAL"
-            ((health_check_counter++))
+            health_check_counter=$((health_check_counter + 1))
 
             # Periodic health logging (every 10 checks = ~5 minutes with default interval)
             if [[ $((health_check_counter % 10)) -eq 0 ]]; then
@@ -374,7 +374,7 @@ run_with_health_monitoring() {
             return 0
         fi
 
-        ((reconnect_attempts++))
+        reconnect_attempts=$((reconnect_attempts + 1))
 
         if [[ $reconnect_attempts -ge $MAX_RECONNECT_ATTEMPTS ]]; then
             log_error "Max reconnection attempts ($MAX_RECONNECT_ATTEMPTS) reached, exiting for systemd restart"
