@@ -185,7 +185,8 @@ create_credentials_file() {
     local tunnel_secret="$2"
     local creds_file="/etc/cloudflared/${tunnel_id}.json"
 
-    log_info "Creating credentials file: $creds_file"
+    # Log to stderr so it doesn't get captured in command substitution
+    log_info "Creating credentials file: $creds_file" >&2
 
     mkdir -p /etc/cloudflared
 
@@ -198,8 +199,9 @@ create_credentials_file() {
 EOF
 
     chmod 600 "$creds_file"
-    log_info "Credentials file created successfully"
+    log_info "Credentials file created successfully" >&2
 
+    # Only output the path to stdout (for capture)
     echo "$creds_file"
 }
 
