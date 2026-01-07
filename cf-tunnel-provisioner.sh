@@ -146,67 +146,116 @@ get_tunnel_by_name() {
 create_tunnel() {
     local tunnel_name="$1"
     local tunnel_secret
-    
+
     # Generate a secure tunnel secret
     tunnel_secret=$(openssl rand -base64 32)
-    
+
+    # Store secret for credentials file (needed for local config)
+    echo "$tunnel_secret" > "$STATE_DIR/tunnel-secret.tmp"
+
     local response
+    # Note: Do NOT set config_src - leaving it unset defaults to "local" config mode
+    # This is required for cloudflared access ssh/tcp commands to work
     response=$(cf_api POST "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel" \
-        "{\"name\":\"${tunnel_name}\",\"tunnel_secret\":\"${tunnel_secret}\",\"config_src\":\"cloudflare\"}")
-    
+        "{\"name\":\"${tunnel_name}\",\"tunnel_secret\":\"${tunnel_secret}\"}")
+
     local success
     success=$(echo "$response" | jq -r '.success')
-    
+
     if [[ "$success" != "true" ]]; then
         log_error "Failed to create tunnel: $(echo "$response" | jq -r '.errors')"
+        rm -f "$STATE_DIR/tunnel-secret.tmp"
         return 1
     fi
-    
+
     echo "$response" | jq -r '.result.id'
 }
 
 get_tunnel_token() {
     local tunnel_id="$1"
     local response
-    
+
     response=$(cf_api GET "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel/${tunnel_id}/token")
     echo "$response" | jq -r '.result // empty'
 }
 
-configure_tunnel() {
+# Create local credentials file for tunnel (required for local config mode)
+create_credentials_file() {
+    local tunnel_id="$1"
+    local tunnel_secret="$2"
+    local creds_file="/etc/cloudflared/${tunnel_id}.json"
+
+    log_info "Creating credentials file: $creds_file"
+
+    mkdir -p /etc/cloudflared
+
+    cat > "$creds_file" << EOF
+{
+  "AccountTag": "${CF_ACCOUNT_ID}",
+  "TunnelID": "${tunnel_id}",
+  "TunnelSecret": "${tunnel_secret}"
+}
+EOF
+
+    chmod 600 "$creds_file"
+    log_info "Credentials file created successfully"
+
+    echo "$creds_file"
+}
+
+# Create local config.yml file for tunnel (required for local config mode)
+create_config_file() {
     local tunnel_id="$1"
     local hostname="$2"
-    
-    # Build ingress rules
-    local ingress_rules="[{\"hostname\":\"${hostname}\",\"service\":\"ssh://localhost:${SSH_PORT}\"}"
-    
+    local creds_file="$3"
+    local config_file="/etc/cloudflared/config.yml"
+
+    log_info "Creating config file: $config_file"
+
+    # Start config file
+    cat > "$config_file" << EOF
+tunnel: ${tunnel_id}
+credentials-file: ${creds_file}
+
+ingress:
+  - hostname: ${hostname}
+    service: ssh://localhost:${SSH_PORT}
+EOF
+
     # Add additional services if configured
     if [[ -n "$ADDITIONAL_SERVICES" ]]; then
         IFS=',' read -ra SERVICES <<< "$ADDITIONAL_SERVICES"
         for service in "${SERVICES[@]}"; do
             local svc_hostname=$(echo "$service" | cut -d: -f1)
             local svc_target=$(echo "$service" | cut -d: -f2-)
-            ingress_rules+=",{\"hostname\":\"${svc_hostname}\",\"service\":\"${svc_target}\"}"
+            cat >> "$config_file" << EOF
+  - hostname: ${svc_hostname}
+    service: ${svc_target}
+EOF
         done
     fi
-    
+
     # Add catch-all rule
-    ingress_rules+=",{\"service\":\"http_status:404\"}]"
-    
-    local config="{\"config\":{\"ingress\":${ingress_rules}}}"
-    
-    local response
-    response=$(cf_api PUT "/accounts/${CF_ACCOUNT_ID}/cfd_tunnel/${tunnel_id}/configurations" "$config")
-    
-    local success
-    success=$(echo "$response" | jq -r '.success')
-    
-    if [[ "$success" != "true" ]]; then
-        log_error "Failed to configure tunnel: $(echo "$response" | jq -r '.errors')"
+    cat >> "$config_file" << EOF
+  - service: http_status:404
+EOF
+
+    chmod 644 "$config_file"
+    log_info "Config file created successfully"
+}
+
+# Get existing tunnel secret from token (for existing tunnels)
+get_tunnel_secret_from_token() {
+    local tunnel_id="$1"
+    local token
+
+    token=$(get_tunnel_token "$tunnel_id")
+    if [[ -z "$token" ]]; then
         return 1
     fi
-    
-    return 0
+
+    # Token is base64 encoded JSON with {a: accountId, t: tunnelId, s: secret}
+    echo "$token" | base64 -d 2>/dev/null | jq -r '.s // empty'
 }
 
 create_dns_record() {
@@ -297,7 +346,7 @@ wait_for_network() {
 
 # Monitor cloudflared process and restart if needed
 run_with_health_monitoring() {
-    local token="$1"
+    local tunnel_id="$1"
     local reconnect_attempts=0
     local cloudflared_pid=""
 
@@ -319,8 +368,9 @@ run_with_health_monitoring() {
         local start_ip=$(curl -s --max-time 5 ifconfig.me 2>/dev/null || echo "unknown")
         log_debug "Tunnel starting at $start_time from IP: $start_ip"
 
-        # Start cloudflared in background so we can monitor it
-        cloudflared tunnel run --token "$token" &
+        # Start cloudflared with LOCAL config (not token-based)
+        # This uses /etc/cloudflared/config.yml and credentials file
+        cloudflared tunnel run "$tunnel_id" &
         cloudflared_pid=$!
 
         log_info "cloudflared started with PID: $cloudflared_pid"
@@ -425,47 +475,54 @@ main() {
     
     # Check if tunnel already exists
     local tunnel_id
+    local tunnel_secret=""
+    local is_new_tunnel=false
+
     tunnel_id=$(get_tunnel_by_name "$tunnel_name")
-    
+
     if [[ -z "$tunnel_id" ]]; then
         log_info "Tunnel does not exist, creating..."
+        is_new_tunnel=true
         tunnel_id=$(create_tunnel "$tunnel_name")
-        
+
         if [[ -z "$tunnel_id" ]]; then
             log_error "Failed to create tunnel"
             exit 1
         fi
-        
+
         log_info "Tunnel created with ID: ${tunnel_id}"
-        
-        # Configure the tunnel
-        log_info "Configuring tunnel ingress rules..."
-        if ! configure_tunnel "$tunnel_id" "$hostname"; then
-            log_error "Failed to configure tunnel"
-            exit 1
+
+        # Get the secret we stored during creation
+        if [[ -f "$STATE_DIR/tunnel-secret.tmp" ]]; then
+            tunnel_secret=$(cat "$STATE_DIR/tunnel-secret.tmp")
+            rm -f "$STATE_DIR/tunnel-secret.tmp"
         fi
-        
+
         # Create DNS record
         log_info "Setting up DNS record..."
         create_dns_record "$hostname" "$tunnel_id"
     else
         log_info "Tunnel already exists with ID: ${tunnel_id}"
-        
-        # Update configuration in case it changed
-        log_info "Updating tunnel configuration..."
-        configure_tunnel "$tunnel_id" "$hostname" || true
+
+        # Get tunnel secret from API token (for existing tunnels)
+        log_info "Retrieving tunnel credentials..."
+        tunnel_secret=$(get_tunnel_secret_from_token "$tunnel_id")
+
+        if [[ -z "$tunnel_secret" ]]; then
+            log_error "Failed to get tunnel secret - tunnel may need to be recreated"
+            exit 1
+        fi
     fi
-    
-    # Get tunnel token
-    log_info "Retrieving tunnel token..."
-    local token
-    token=$(get_tunnel_token "$tunnel_id")
-    
-    if [[ -z "$token" ]]; then
-        log_error "Failed to get tunnel token"
-        exit 1
-    fi
-    
+
+    # Create local credentials file
+    log_info "Setting up local credentials..."
+    local creds_file
+    creds_file=$(create_credentials_file "$tunnel_id" "$tunnel_secret")
+
+    # Create local config.yml file
+    log_info "Creating local config file..."
+    create_config_file "$tunnel_id" "$hostname" "$creds_file"
+
     # Save tunnel info for reference
     cat > "$STATE_DIR/tunnel-info.json" << EOF
 {
@@ -473,16 +530,19 @@ main() {
     "tunnel_name": "${tunnel_name}",
     "hostname": "${hostname}",
     "machine_id": "${machine_id}",
+    "config_mode": "local",
+    "credentials_file": "${creds_file}",
     "created_at": "$(date -Iseconds)"
 }
 EOF
-    
+
     log_info "Tunnel provisioned successfully!"
-    log_info "SSH Access: cloudflared access ssh --hostname ${hostname}"
+    log_info "SSH Access: cloudflared access tcp --hostname ${hostname} --url localhost:2222"
+    log_info "Then: ssh -p 2222 user@localhost"
     log_info "Starting cloudflared with health monitoring..."
 
-    # Run cloudflared with health monitoring (handles reconnection)
-    run_with_health_monitoring "$token"
+    # Run cloudflared with health monitoring using local config (not token)
+    run_with_health_monitoring "$tunnel_id"
 }
 
 # ============================================================================

@@ -68,6 +68,15 @@ else
     log_info "State files preserved at /var/lib/cf-tunnel/"
 fi
 
+# Ask about cloudflared local config
+read -p "Remove cloudflared local config (/etc/cloudflared)? (y/n): " REMOVE_CLOUDFLARED_CONFIG
+if [[ "$REMOVE_CLOUDFLARED_CONFIG" =~ ^[Yy]$ ]]; then
+    rm -rf /etc/cloudflared
+    log_info "Cloudflared config removed"
+else
+    log_info "Cloudflared config preserved at /etc/cloudflared/"
+fi
+
 # Ask about cloudflared binary
 echo ""
 read -p "Remove cloudflared binary? (y/n): " REMOVE_CLOUDFLARED
